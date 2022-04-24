@@ -1,4 +1,5 @@
 ﻿using Autodesk.Revit.DB;
+using Autodesk.Revit.DB.Structure;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.UI.Selection;
 using Prism.Commands;
@@ -75,6 +76,33 @@ namespace RevitAPICreateModel
             return points;
         }
 
+        //public void CreateRoof(Document document, Level level2, List<XYZ> points, List<Wall> walls)
+        //{
+        //    double wallWidth = walls[0].Width;
+        //    double dt = wallWidth / 2;
+        //    double dz = 0;
+        //    List<XYZ> pointsRoof = new List<XYZ>();
+        //    points.Add(new XYZ(-dt, -dt, dz));
+        //    points.Add(new XYZ(dt, -dt, dz));
+        //    points.Add(new XYZ(dt, dt, dz));
+        //    points.Add(new XYZ(-dt, dt, dz));
+
+        //    ElementId id = document.GetDefaultElementTypeId(ElementTypeGroup.RoofType);
+        //    RoofType type = document.GetElement(id) as RoofType;
+
+        //    CurveArray curveArray = new CurveArray();
+        //    curveArray.Append(Line.CreateBound(pointsRoof[0], pointsRoof[1]));
+        //    curveArray.Append(Line.CreateBound(pointsRoof[2], pointsRoof[3]));
+
+        //    using (Transaction ts = new Transaction(document))
+        //    {
+        //        ts.Start("Create ExtrusionRoof");
+        //        ReferencePlane plane = document.Create.NewReferencePlane(new XYZ(0, 0, 0), new XYZ(0, 0, 20), new XYZ(0, 20, 0), document.ActiveView);
+        //        document.Create.NewExtrusionRoof(curveArray, plane, level2, type, 0, 40);
+        //        ts.Commit();
+        //    }
+        //}
+
         public void CreateModel(Document document, List<XYZ> points, Level level1, Level level2)
         {
             List<Wall> walls = new List<Wall>();
@@ -93,6 +121,7 @@ namespace RevitAPICreateModel
             InsertWindows(document, level1, walls[2]);
             InsertWindows(document, level1, walls[3]);
 
+            //CreateRoof(document, level2, points, walls);
             ts.Commit();
         }
 
@@ -113,6 +142,10 @@ namespace RevitAPICreateModel
 
             if (!doorType.IsActive)
                 doorType.Activate();
+            Transaction ts = new Transaction(document, "addDoors");
+            ts.Start();
+            document.Create.NewFamilyInstance(point, doorType, wall, level1, StructuralType.NonStructural);
+            ts.Commit();
         }
 
         public void InsertWindows(Document document, Level level1, Wall wall)
@@ -132,6 +165,11 @@ namespace RevitAPICreateModel
 
             if (!windowType.IsActive)
                 windowType.Activate();
+
+            Transaction ts = new Transaction(document, "addWindows");
+            ts.Start();
+            document.Create.NewFamilyInstance(point, windowType, wall, level1, StructuralType.NonStructural);
+            ts.Commit();
         }
     }
 }
