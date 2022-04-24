@@ -128,7 +128,7 @@ namespace RevitAPICreateModel
             LocationCurve hostCurve = wall.Location as LocationCurve;
             XYZ point1 = hostCurve.Curve.GetEndPoint(0);
             XYZ point2 = hostCurve.Curve.GetEndPoint(1);
-            XYZ point = (point1 + point2) / 2;
+            XYZ point = (point1 + point2) / 3;
 
             if (!windowType.IsActive)
                 windowType.Activate();
