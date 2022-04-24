@@ -14,8 +14,6 @@ namespace RevitAPICreateModel
     public class MVVM
     {
         public ExternalCommandData _commandData;
-        public DelegateCommand saveCommand { get; }
-
 
         public MVVM(ExternalCommandData commandData)
         {
@@ -57,11 +55,8 @@ namespace RevitAPICreateModel
 
             return level2;
         }
-        public List<XYZ> CreateWalls()
+        public List<XYZ> SetWalls(double width, double depth)
         {
-            double width = UnitUtils.ConvertToInternalUnits(12000, UnitTypeId.Millimeters);
-            double depth = UnitUtils.ConvertToInternalUnits(5000, UnitTypeId.Millimeters);
-
             double dx = width / 2;
             double dy = depth / 2;
             double dz = 0;
@@ -76,34 +71,47 @@ namespace RevitAPICreateModel
             return points;
         }
 
-        //public void CreateRoof(Document document, Level level2, List<XYZ> points, List<Wall> walls)
-        //{
-        //    double wallWidth = walls[0].Width;
-        //    double dt = wallWidth / 2;
-        //    double dz = 0;
-        //    List<XYZ> pointsRoof = new List<XYZ>();
-        //    points.Add(new XYZ(-dt, -dt, dz));
-        //    points.Add(new XYZ(dt, -dt, dz));
-        //    points.Add(new XYZ(dt, dt, dz));
-        //    points.Add(new XYZ(-dt, dt, dz));
+        public void CreateRoof(Document document, Level level2, List<Wall> walls)
+        {
+            var level = level2;
 
-        //    ElementId id = document.GetDefaultElementTypeId(ElementTypeGroup.RoofType);
-        //    RoofType type = document.GetElement(id) as RoofType;
+            RoofType roofType = new FilteredElementCollector(document)
+                .OfClass(typeof(RoofType))
+                .OfType<RoofType>()
+                .Where(x => x.Name.Equals("Roof_Generic-400mm"))
+                .Where(x => x.FamilyName.Equals("Basic Roof"))
+                .FirstOrDefault();
 
-        //    CurveArray curveArray = new CurveArray();
-        //    curveArray.Append(Line.CreateBound(pointsRoof[0], pointsRoof[1]));
-        //    curveArray.Append(Line.CreateBound(pointsRoof[2], pointsRoof[3]));
+            double wallWidth = walls[0].Width;
+            double df = wallWidth / 2;
+            double dh = level.get_Parameter(BuiltInParameter.LEVEL_ELEV).AsDouble();
+            XYZ dt = new XYZ(-df, -df, dh);
+            XYZ dz = new XYZ(0, 0, 20);
+            XYZ dy = new XYZ(0, 20, 0);
+            LocationCurve locationCurve = walls[0].Location as LocationCurve;
+            XYZ point = locationCurve.Curve.GetEndPoint(0);
+            double l = (walls[0].Location as LocationCurve).Curve.Length + df * 2;
+            double w = ((walls[1].Location as LocationCurve).Curve.Length / 2) + df;
+            XYZ origin = point + dt;
+            XYZ vy = XYZ.BasisY;
+            XYZ vz = XYZ.BasisZ;
 
-        //    using (Transaction ts = new Transaction(document))
-        //    {
-        //        ts.Start("Create ExtrusionRoof");
-        //        ReferencePlane plane = document.Create.NewReferencePlane(new XYZ(0, 0, 0), new XYZ(0, 0, 20), new XYZ(0, 20, 0), document.ActiveView);
-        //        document.Create.NewExtrusionRoof(curveArray, plane, level2, type, 0, 40);
-        //        ts.Commit();
-        //    }
-        //}
+            CurveArray curve = new CurveArray();
+            curve.Append(Line.CreateBound(origin, origin + new XYZ(0, w, 5)));
+            curve.Append(Line.CreateBound(origin + new XYZ(0, w, 5), origin + new XYZ(0, w * 2, 0)));
 
-        public void CreateModel(Document document, List<XYZ> points, Level level1, Level level2)
+            var av = document.ActiveView;
+            Transaction ts = new Transaction(document, "Create roof");
+            ts.Start();
+
+            ReferencePlane plane = document.Create.NewReferencePlane2(origin, origin - vz, origin + vy, av);
+
+            ExtrusionRoof extrusionRoof = document.Create.NewExtrusionRoof(curve, plane, level, roofType, 0, l);
+
+            ts.Commit();
+        }
+
+        public List<Wall> CreateWalls(Document document, List<XYZ> points, Level level1, Level level2)
         {
             List<Wall> walls = new List<Wall>();
             Transaction ts = new Transaction(document);
@@ -115,14 +123,9 @@ namespace RevitAPICreateModel
                 walls.Add(wall);
                 wall.get_Parameter(BuiltInParameter.WALL_HEIGHT_TYPE).Set(level2.Id);
             }
-
-            InsertDoors(document, level1, walls[0]);
-            InsertWindows(document, level1, walls[1]);
-            InsertWindows(document, level1, walls[2]);
-            InsertWindows(document, level1, walls[3]);
-
-            //CreateRoof(document, level2, points, walls);
             ts.Commit();
+
+            return walls;
         }
 
         public void InsertDoors(Document document, Level level1, Wall wall)
@@ -135,20 +138,20 @@ namespace RevitAPICreateModel
                 .Where(x => x.FamilyName.Equals("Doors_ExtDbl_Flush"))
                 .FirstOrDefault();
 
+            Transaction ts = new Transaction(document, "addDoors");
+            ts.Start();
             LocationCurve hostCurve = wall.Location as LocationCurve;
             XYZ point1 = hostCurve.Curve.GetEndPoint(0);
             XYZ point2 = hostCurve.Curve.GetEndPoint(1);
-            XYZ point = (point1+point2)/2;
+            XYZ point = (point1 + point2) / 2;
 
             if (!doorType.IsActive)
                 doorType.Activate();
-            Transaction ts = new Transaction(document, "addDoors");
-            ts.Start();
             document.Create.NewFamilyInstance(point, doorType, wall, level1, StructuralType.NonStructural);
             ts.Commit();
         }
 
-        public void InsertWindows(Document document, Level level1, Wall wall)
+        public void InsertWindows(Document document, Level level1, List<Wall> walls)
         {
             FamilySymbol windowType = new FilteredElementCollector(document)
                 .OfClass(typeof(FamilySymbol))
@@ -158,17 +161,22 @@ namespace RevitAPICreateModel
                 .Where(x => x.FamilyName.Equals("Windows_Sgl_Plain"))
                 .FirstOrDefault();
 
-            LocationCurve hostCurve = wall.Location as LocationCurve;
-            XYZ point1 = hostCurve.Curve.GetEndPoint(0);
-            XYZ point2 = hostCurve.Curve.GetEndPoint(1);
-            XYZ point = (point1 + point2) / 3;
-
-            if (!windowType.IsActive)
-                windowType.Activate();
-
             Transaction ts = new Transaction(document, "addWindows");
             ts.Start();
-            document.Create.NewFamilyInstance(point, windowType, wall, level1, StructuralType.NonStructural);
+            if (!windowType.IsActive)
+                windowType.Activate();
+            for (int i = 1; i < 4; i++)
+            {
+                Wall wall = walls[i];
+                LocationCurve hostCurve = wall.Location as LocationCurve;
+                XYZ point1 = hostCurve.Curve.GetEndPoint(0);
+                XYZ point2 = hostCurve.Curve.GetEndPoint(1);
+                XYZ point = (point1 + point2) / 2;
+
+                var window = document.Create.NewFamilyInstance(point, windowType, wall, level1, StructuralType.NonStructural);
+
+                window.get_Parameter(BuiltInParameter.INSTANCE_SILL_HEIGHT_PARAM).Set(UnitUtils.ConvertToInternalUnits(850, UnitTypeId.Millimeters));
+            }
             ts.Commit();
         }
     }
