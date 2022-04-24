@@ -23,7 +23,8 @@ namespace RevitAPICreateModel
             Level level1 = mvvm.GetLevel1();
             Level level2 = mvvm.GetLevel2();
 
-            mvvm.CreateWalls(level1, level2);
+            List<XYZ> points = mvvm.CreateWalls();
+            mvvm.CreateModel(doc, points, level1, level2);
 
             return Result.Succeeded;
         }
